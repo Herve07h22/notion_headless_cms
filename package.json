@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "color": "^3.1.2",
+    "isomorphic-unfetch": "^3.0.0",
     "next": "^9.1.4",
     "react": "^16.12.0",
     "react-dom": "^16.12.0"
@@ -10,7 +12,5 @@
     "start": "next start",
     "export": "next build && next export"
   },
-  "devDependencies": {
-    "frontmatter-markdown-loader": "^3.1.0"
-  }
+  "devDependencies": {}
 }
