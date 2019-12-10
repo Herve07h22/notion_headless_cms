@@ -1,0 +1,174 @@
+import fetch from "isomorphic-unfetch";
+
+//const PAGE_ID = "1a86e7f6-d6a5-4537-a2e5-15650c1888b8";
+const PAGE_ID = "e256cc68-cdba-4aea-b92a-5c12c3223052";
+
+// https://www.notion.so/camilab/Un-nouvel-article-de-blog-e256cc68cdba4aeab92a5c12c3223052
+
+
+
+export default async function getNotionData() {
+  const data    = await loadPageChunk({ pageId: PAGE_ID });
+  const blocks  = data.recordMap.block;
+
+  const mainBlock     = blocks[PAGE_ID]
+
+  const childBlocks   = mainBlock.value.content.map(b => blocks[b].value)
+  const titreArticle  = mainBlock.value.properties.title[0]
+  const dateEdition   = mainBlock.value.last_edited_time
+
+  const genereContenu = (blocCourant, autresBlocs) => {
+    console.log("blocCourant : ", blocCourant)
+    let retour = {}
+    let limite = -1
+
+    switch(blocCourant.type) {
+      case "header" :
+        limite = autresBlocs.findIndex(b => b.type === "header")
+      case "sub_header" :
+        // On prelève tous les blocs suivants jusqu'au prochain header ou sub-header
+        limite = autresBlocs.findIndex(b => b.type === "header" || b.type === "sub_header")
+        return { type: blocCourant.type, 
+                    value: blocCourant.properties.title, 
+                    enfants: autresBlocs && autresBlocs.length ? genereContenu(autresBlocs[0], autresBlocs.slice(1)) : []  }
+        break;
+      case "bulleted_list" :
+        limite = autresBlocs.findIndex(b => b.type !== "bulleted_list")
+      case "text" :
+        retour  = { type: blocCourant.type, value: blocCourant.properties ? blocCourant.properties.title : "" } 
+        break;
+      case "code" :
+        retour = { type: blocCourant.type, value: blocCourant.properties.title, language : blocCourant.properties.language }
+        break;
+      case "image" :
+        retour = { type: "image", src: `/image.js?url=${encodeURIComponent(blocCourant.format.display_source)}` }
+        break;
+      default :
+        retour = {}
+    }
+
+    console.log("Retour : ", retour)
+
+    if (autresBlocs && autresBlocs.length) {
+      return [ retour, ...genereContenu(autresBlocs[0], autresBlocs.slice(1)) ]
+    } else {
+      return [ retour ]
+    }
+
+  }
+
+  let article = {titre:titreArticle, date:dateEdition, contenu:genereContenu(childBlocks[0], childBlocks.slice(1) ) };
+
+  console.log("article : ", article)
+  return { article };
+}
+
+async function rpc(fnName, body = {}) {
+  const res = await fetch(`https://www.notion.so/api/v3/${fnName}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (res.ok) {
+    return res.json();
+  } else {
+    throw new Error(await getError(res));
+  }
+}
+
+async function getError(res) {
+  return `Notion API error (${res.status}) \n${getJSONHeaders(
+    res
+  )}\n ${await getBodyOrNull(res)}`;
+}
+
+function getJSONHeaders(res) {
+  return JSON.stringify(res.headers.raw());
+}
+
+function getBodyOrNull(res) {
+  try {
+    return res.text();
+  } catch (err) {
+    return null;
+  }
+}
+
+/*
+function queryCollection({
+  collectionId,
+  collectionViewId,
+  loader = {},
+  query = {}
+}) {
+  const {
+    limit = 70,
+    loadContentCover = true,
+    type = "table",
+    userLocale = "en",
+    userTimeZone = "America/Los_Angeles"
+  } = loader;
+
+  const {
+    aggregate = [
+      {
+        aggregation_type: "count",
+        id: "count",
+        property: "title",
+        type: "title",
+        view_type: "table"
+      }
+    ],
+    filter = [],
+    filter_operator = "and",
+    sort = []
+  } = query;
+
+  return rpc("queryCollection", {
+    collectionId,
+    collectionViewId,
+    loader: {
+      limit,
+      loadContentCover,
+      type,
+      userLocale,
+      userTimeZone
+    },
+    query: {
+      aggregate,
+      filter,
+      filter_operator,
+      sort
+    }
+  });
+}
+*/
+
+function loadPageChunk({
+  pageId,
+  limit = 100,
+  cursor = { stack: [] },
+  chunkNumber = 0,
+  verticalColumns = false
+}) {
+  return rpc("loadPageChunk", {
+    pageId,
+    limit,
+    cursor,
+    chunkNumber,
+    verticalColumns
+  });
+}
+
+/*
+function values(obj) {
+  const vals = [];
+  for (const key in obj) {
+    vals.push(obj[key]);
+  }
+  return vals;
+}
+*/

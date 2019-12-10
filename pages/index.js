@@ -3,7 +3,7 @@ import getNotionData from "../data/notion";
 import { useState, useEffect } from "react";
 import Head from "next/head";
 
-export default function Page({ etag, article }) {
+export default function Page({ etag, sections, meta }) {
   const focused = useFocus();
   useEffect(
     () => {
@@ -26,13 +26,13 @@ export default function Page({ etag, article }) {
   return (
     <Layout>
       <Head>
-        {article.titre && <title>{article.titre}</title>}
-        {article.contenu[0] && (
-          <meta name="description" content={article.contenu[0][0]} />
+        {meta.title && <title>{meta.title} | Camilab.co</title>}
+        {meta.description && (
+          <meta name="description" content={meta.description} />
         )}
       </Head>
 
-      {article.contenu.map((section, i) => {
+      {sections.map((section, i) => {
         return (
           <section
             key={`section-${i}`}
@@ -47,13 +47,7 @@ export default function Page({ etag, article }) {
                   section.children[0].type === "text" ? (
                     <p>{renderText(section.children[0].value)}</p>
                   ) : null}
-                  <ul className="actions">
-                    <li>
-                      <a href="#first" className="arrow scrolly">
-                        <span className="label">Next</span>
-                      </a>
-                    </li>
-                  </ul>
+                  
                 </>
               ) : (
                 <h2>{renderText(section.title)}</h2>

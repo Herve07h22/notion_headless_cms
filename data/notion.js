@@ -1,59 +1,27 @@
 import fetch from "isomorphic-unfetch";
 
-//const PAGE_ID = "1a86e7f6-d6a5-4537-a2e5-15650c1888b8";
 const PAGE_ID = "e256cc68-cdba-4aea-b92a-5c12c3223052";
 
-// https://www.notion.so/camilab/Un-nouvel-article-de-blog-e256cc68cdba4aeab92a5c12c3223052
-
-
-
 export default async function getNotionData() {
-  const data    = await loadPageChunk({ pageId: PAGE_ID });
+  const data = await loadPageChunk({ pageId: PAGE_ID });
+  //const blocks = values(data.recordMap.block);
   const blocks  = data.recordMap.block;
 
   const mainBlock     = blocks[PAGE_ID]
 
-  const childBlocks   = mainBlock.value.content
+  const childBlocks   = mainBlock.value.content.map(b => blocks[b])
   const titreArticle  = mainBlock.value.properties.title[0]
   const dateEdition   = mainBlock.value.last_edited_time
 
-  let article = {titre:titreArticle, date:dateEdition, contenu:[] };
+  const sections = [{ title: [titreArticle], children: [] }];
+  let meta = {title:titreArticle, date:dateEdition};
 
-  const genereContenu = (blocCourant, autresBlocs, listeItems) => {
-    let retour = null
-    let liste  = listeitems ? listeitems.slice(0) : []
-
-    switch(blocCourant.type) {
-      case "header" :
-      case "sub_header" :
-      case "text" :
-        retour = { type: blocCourant.type, value: value.properties.title }
-        break;
-      case "code" :
-        retour = { type: blocCourant.type, value: value.properties.title, language : value.properties.language }
-        break;
-      case "bulleted_list" :
-        // Si le prochain block est encore un bullet, on se contente de compléter la liste
-        if (autresBlocs && autresBlocs.length && autresBlocs[0].type === "bulleted_list") {
-          liste.push(value.properties.title)
-        } else {
-          retour = { type: blocCourant.type, value: [value.properties.title, ...listeItems ] }
-        }
-    }
-
-    if (autresBlocs && autresBlocs.length) {
-      return [ retour, ...genereContenu(autresBlocs[0], autresBlocs.slice(1)), liste ]
-    } else {
-      return [ retour ]
-    }
-
-  }
+  let currentSection = null;
+  let image_url = "";
 
   for (const block of childBlocks) {
-    const value = blocks[block].value;
-    console.log("Processing block :", value)
+    const value = block.value;
 
-    /* On ne traite pas les cas des sous-articles
     if (
       value.type === "page" ||
       value.type === "header" ||
@@ -62,47 +30,88 @@ export default async function getNotionData() {
       sections.push({ title: value.properties.title, children: [] });
       continue;
     }
-    */
 
-    // const section = sections[sections.length - 1];
-  
-    let listeCourante = null;
+    const section = sections[sections.length - 1];
+    let list = null;
 
-    switch(value.type) {
-      case "header" :   value.properties && article.contenu.push({ type: "header", value: value.properties.title })
-                      listeCourante = null
-                      break;
-      
-      case "sub_header" :   value.properties && article.contenu.push({ type: "sub_header", value: value.properties.title })
-                      listeCourante = null
-                      break;
+    if (value.type === "image") {
+      list = null;
+      image_url = value.format.display_source;
+      const child = {
+        type: "image",
+        //src: `/image.js?url=${encodeURIComponent(value.format.display_source)}`
+        src: image_url.startsWith('https://s3-us-west-2.amazonaws.com/secure.notion-static.com') ?
+        `https://www.notion.so/image/${encodeURIComponent(image_url)}` : image_url
+      };
+      section.children.push(child);
+    } else if (value.type === "text") {
+      list = null;
+      if (value.properties) {
+        section.children.push({
+          type: "text",
+          value: value.properties.title
+        });
+        // Le premier texte rencontré correspond à la description 
+        if (!meta.description) meta.description = value.properties.title[0]
+      }
+    } else if (value.type === "code") {
+        list = null;
+        if (value.properties) {
+          section.children.push({
+            type: "code",
+            value: value.properties.title,
+            language : value.properties.language,
+          });
+        }
+    } else if (value.type === "bulleted_list") {
+      if (list == null) {
+        list = {
+          type: "list",
+          children: []
+        };
+        section.children.push(list);
+      }
+      list.children.push(value.properties.title);
+    } else if (value.type === "collection_view") {
+      const col = await queryCollection({
+        collectionId: value.collection_id,
+        collectionViewId: value.view_ids[0]
+      });
+      const table = {};
+      const entries = values(col.recordMap.block).filter(
+        block => block.value && block.value.parent_id === value.collection_id
+      );
+      for (const entry of entries) {
+      	if (entry.value.properties) {
+          const props = entry.value.properties;
+          
+          // I wonder what `Agd&` is? it seems to be a fixed property
+          // name that refers to the value
+          table[
+            props.title[0][0]
+              .toLowerCase()
+              .trim()
+              .replace(/[ -_]+/, "_")
+          ] = props["Agd&"];
+        }
 
-      case "image" :  article.contenu.push({ type: "image", src: `/image.js?url=${encodeURIComponent(value.format.display_source)}` }  )
-                      listeCourante = null
-                      break;
-
-      case "text" :   value.properties && article.contenu.push({ type: "text", value: value.properties.title })
-                      listeCourante = null
-                      break;
-
-      case "code" :   value.properties && article.contenu.push({ type: "code", value: value.properties.title, language : value.properties.language })
-                      listeCourante = null
-                      break;
-
-      case "bulleted_list" :   if (listeCourante == null) {
-                        // C'est le premier élément de la liste
-                        listeCourante = [ value.properties.title ]
-                        article.contenu.push({ type: "bulleted_list", value: listeCourante })
-                      } else {
-                        listeCourante = [ ...liste, value.properties.title ]
-                      }
-                      break;
-      default :       listeCourante = null
-                      console.log("Block non géré")
+        if (sections.length === 1) {
+          meta = table;
+        } else {
+          section.children.push({
+            type: "table",
+            value: table
+          });
+        }
+      }
+    } else {
+      list = null;
+      console.log("UNHANDLED", value);
     }
   }
-  console.log("article : ", article)
-  return { article };
+  console.log("sections : ")
+  sections.forEach( s => console.log(s))
+  return { sections, meta };
 }
 
 async function rpc(fnName, body = {}) {
@@ -139,7 +148,6 @@ function getBodyOrNull(res) {
   }
 }
 
-/*
 function queryCollection({
   collectionId,
   collectionViewId,
@@ -187,7 +195,6 @@ function queryCollection({
     }
   });
 }
-*/
 
 function loadPageChunk({
   pageId,
@@ -205,7 +212,6 @@ function loadPageChunk({
   });
 }
 
-/*
 function values(obj) {
   const vals = [];
   for (const key in obj) {
@@ -213,4 +219,3 @@ function values(obj) {
   }
   return vals;
 }
-*/
